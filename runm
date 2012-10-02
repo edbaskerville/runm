@@ -1,0 +1,90 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import yaml
+import pytz
+import json
+from collections import OrderedDict as odict
+from cStringIO import StringIO
+from datetime import datetime
+
+class JobConfig(yaml.YAMLObject):
+	yaml_tag = u'!runm'
+	name = ''
+	script = ''
+	directory = '.'
+	runs = 1
+	submitter = 'qsub'
+	
+	def getUseEnvironmentVariables(self):
+		try:
+			value = getattr(self, 'use-environment-variables')
+			if value == True:
+				return True
+			else:
+				return False
+		except:
+			return False
+	useEnvironmentVariables = property(getUseEnvironmentVariables)
+	
+	def getParametersFilename(self):
+		try:
+			return getattr(self, 'parameters-filename')
+		except:
+			return 'parameters.json'
+	parametersFilename = property(getParametersFilename)
+	
+	def getParametersFormat(self):
+		try:
+			return getattr(self, 'parameters-format')
+		except:
+			return os.path.splitext(self.getParametersFormat())[1]
+	parametersFormat = property(getParametersFormat)
+	
+	def getRandomSeedParameterName(self):
+		try:
+			return getattr(self, 'random-seed-parameter-name')
+		except:
+			return 'seed'
+	randomSeedParameterName = property(getParametersFormat)
+
+	
+	constants = {}
+	
+class Output(yaml.YAMLObject):
+	yaml_tag = u'!output'
+
+class Sequence(yaml.YAMLObject):
+	yaml_tag = u'!sequence'
+
+class List(yaml.YAMLObject):
+	yaml_tag = u'!list'
+
+class Parallel(yaml.YAMLObject):
+	yaml_tag = u'!parallel'
+
+def readYamlFile(filename):
+	linesOut = StringIO()
+	linesOut.write('!runm\n')
+	for line in open(filename):
+		linesOut.write(line.expandtabs(1))
+	linesOut.seek(0)
+	return linesOut
+
+def runmGo(argv):
+	filename = argv[0]
+	yamlFile = readYamlFile(filename)
+	jobConfig = yaml.load(yamlFile)
+	print jobConfig.name
+
+def runmDone():
+	print datetime.now(tz=pytz.utc).isoformat(' ')
+
+if __name__ == '__main__':
+	command = sys.argv[1]
+	
+	if command == 'go':
+		runmGo(sys.argv[2:])
+	elif command == 'done':
+		runmDone()
