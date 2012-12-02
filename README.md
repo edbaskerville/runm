@@ -2,6 +2,9 @@ runm
 ====
 A script for running or submitting parameter sweeps for computational jobs.
 
+Ed Baskerville
+2 December 2012
+
 ## Pronunciation
 
 "Run 'em."
@@ -48,8 +51,8 @@ constants:
 sweeps:
 - !sequence
 	parameter: gamma
-	from: 0
-	to: 0.3
+	from: 0.0
+	to: 0.2
 	by: 0.1
 - !sequence
 	parameter: delta
@@ -57,4 +60,48 @@ sweeps:
 	to: 0.3
 	by: 0.1
 ```
+
+The constant variables are specified under `constants`, and the variables to produce combinations of are specified under `sweeps`. YAML is a pretty flexible format, so there are many other ways of specifying the same structure. For example, you can use this compact notation instead for the `sweeps` section:
+```
+sweeps:
+- !sequence { parameter: gamma, from: 0.0, to: 0.2, by: 0.1 }
+- !sequence { parameter: delta, from: 0.1, to: 0.3, by: 0.1
+```
+
+If the filename of this configuration file was `config.yaml`, you can submit it using
+```
+runm config.yaml
+```
+and this would result in the creation of a directory hierarchy for results, and would cause the command specified by `submit-command` (in this case, `echo...`) to be run for every combination of parameter values specified inside a directory corresponding to that combination of parameter values. Parameters specified by `constants` will be held the same for every run.
+
+The directory hierarchy will be rooted at `[results-directory]/[name]/[timestamp]`, where `[timestamp]` is the submission date and time in the format `YYYY.MM.DD-HH.MM.SS`. The hierarchy for this job would thus look like, e.g.,
+```
+/path/to/results/jobname/2012.11.26-12.10.54/
+  gamma=0.0-delta=0.1/
+  gamma=0.0-delta=0.2/
+  gamma=0.0-delta=0.3/
+  gamma=0.1-delta=0.1/
+  gamma=0.1-delta=0.2/
+  gamma=0.1-delta=0.3/
+  gamma=0.2-delta=0.1/
+  gamma=0.2-delta=0.2/
+  gamma=0.2-delta=0.3/
+```
+
+
+
+## Running a parameter sweep locally
+
+If you have a bunch of relatively quick jobs that you don't want to go through the trouble of submitting to a cluster, you can use runm to run them locally by setting `submit-command` to a command that actually runs the job. If your command reads in the parameters from a file as described above, this might be as simple as a single script:
+```
+submit-command: simulate_the_universe.sh
+```
+
+Furthermore, you can run multiple jobs in parallel by specifying the `thread-count` parameter in the configuration file. For example, if you have an 8-core machine, you can have 8 of your local jobs run at a time via:
+```
+thread-count: 8
+```
+As soon as a job finishes, the next waiting job will start.
+
+## Running 
 
