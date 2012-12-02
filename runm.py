@@ -70,17 +70,11 @@ def runSubmitCommandAsync(submitCommand, runPath, env, errorFilename, stdoutFile
 	
 	return (error, stdoutData, stderrData)
 
-def isTrue(valStr):
-	return valStr == 'YES' \
-		or valStr == 'yes' \
-		or valStr == 'TRUE' \
-		or valStr == 'true'  
+def isTrue(val):
+	return val in (True, 'Yes', 'YES', 'yes', 'True', 'TRUE', 'true')
 
-def isFalse(valStr):
-	return valStr == 'NO' \
-		or valStr == 'no' \
-		or valStr == 'FALSE' \
-		or valStr == 'false'
+def isFalse(val):
+	return val in (False, 'No', 'NO', 'no', 'False', 'FALSE', 'false')
 
 def stringConstructor(loader, node):
 	print node.value
@@ -132,7 +126,7 @@ class Config(yaml.YAMLObject):
 		try:
 			return getattr(self, 'thread-count')
 		except:
-			return None
+			return 1
 	threadCount = property(getThreadCount)
 	
 	constants = {}
@@ -150,6 +144,13 @@ class Config(yaml.YAMLObject):
 		except:
 			return '.' 
 	resultsDirectory = property(getResultsDirectory)
+	
+	def getMakeSubdirectory(self):
+		try:
+			return isTrue(getattr(self, 'make-subdirectory'))
+		except:
+			return True
+	makeSubdirectory = property(getMakeSubdirectory)
 	
 	def getCommandLineArgumentPrefix(self):
 		try:
@@ -213,11 +214,13 @@ class Config(yaml.YAMLObject):
 			yield combination
 	
 	def generateRootDirectory(self):
-		return makePathRelativeTo(os.path.join(
-			self.resultsDirectory,
-			self.name,
-			datetime.now().strftime('%Y.%m.%d-%H.%M.%S')
-		), self.filename)
+		pathComponents = []
+		pathComponents.append(self.resultsDirectory)
+		if self.makeSubdirectory:
+			pathComponents.append(self.name)
+		pathComponents.append(datetime.now().strftime('%Y.%m.%d-%H.%M.%S'))
+		
+		return makePathRelativeTo(os.path.join(*pathComponents), self.filename)
 
 
 class Sequence(yaml.YAMLObject):
@@ -308,7 +311,7 @@ class RunmSubmit:
 	def __init__(self, config):
 		self.config = config
 		self.runNumFormat = '{0:0' + '{0}d'.format(len(self.config.runs)) + '}'
-		self.pool = Pool(self.config.threadCount)
+		self.pool = Pool(int(self.config.threadCount))
 	
 	def run(self):
 		# Create root directory inside results directory
@@ -346,7 +349,7 @@ class RunmSubmit:
 		for i in range(int(self.config.runs)):
 			runNumStr = self.runNumFormat.format(i+1)
 			
-			if self.config.runs == 1:
+			if int(self.config.runs) == 1:
 				runPath = basePath
 				jobName = baseJobName
 			else:
@@ -455,6 +458,10 @@ def runmSubmit(argv):
 	config = yaml.load(yamlFile)
 	config.filename = os.path.abspath(filename)
 	
+	for arg in argv[1:]:
+		if arg == '--dry':
+			config.dry = True
+	
 	RunmSubmit(config).run()
 
 def runmJobStart(argv):
@@ -479,11 +486,11 @@ def runmStatus(argv):
 	# Walk directory to look at status for each job
 	count = 0
 	submittedCount = 0
+	runningCount = 0
 	doneCount = 0
 	errorCount = 0
 	for dirpath, dirnames, filenames in os.walk(path):
 		statusPath = os.path.join(dirpath, 'runm_status.json')
-		
 		
 		if os.path.exists(statusPath):
 			print dirpath
@@ -494,6 +501,9 @@ def runmStatus(argv):
 				if status == 'SUBMITTED':
 					submittedCount += 1
 					print 'Waiting.'
+				elif status == 'RUNNING':
+					runningCount += 1
+					print 'Running.'
 				elif status == 'DONE':
 					doneCount += 1
 					print 'Successful.'
@@ -522,6 +532,10 @@ def runmStatus(argv):
 	print tableFormat.format(
 		'Waiting:'.rjust(11),
 		submittedCount, percentFormat.format(100*float(submittedCount)/count).rjust(6)
+	)
+	print tableFormat.format(
+		'Running:'.rjust(11),
+		runningCount, percentFormat.format(100*float(runningCount)/count).rjust(6)
 	)
 	print '-' * (12 + countWidth + 7)
 	print tableFormat.format(
