@@ -1,5 +1,6 @@
 runm
 ====
+A script for running or submitting parameter sweeps for computational jobs.
 
 ## Pronunciation
 
@@ -7,7 +8,7 @@ runm
 
 ## Purpose
 
-The purpose of the runm script is to automate the submission of computational jobs with many combinations of different parameters, i.e., parameter sweeps. It is intended as a very lightweight replacement for GridSweeper, which I won't even link to because you should use this instead.
+The purpose of the runm script is to automate the running or submission of computational jobs with many combinations of different parameters, i.e., parameter sweeps. It is intended as a very lightweight replacement for GridSweeper, which I won't even link to because you should use this instead.
 
 The script contains no dependencies whatsoever on any grid submission system, which means two things: (1) it hopefully won't stop working; and (2) it does not have sophisticated job monitoring/notification capabilities, although some of that is still possible, and more may be added.
 
