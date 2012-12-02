@@ -89,6 +89,54 @@ The directory hierarchy will be rooted at `[results-directory]/[name]/[timestamp
 ```
 
 
+## Parameter sweeps
+
+Parameter sweeps are specified as a list of sub-sweeps, which are either sequences or lists of values, e.g.,
+```yaml
+sweeps:
+- !sequence
+	...
+- !sequence
+	...
+- !list
+	...
+```
+All possible combinations of values in the different sequences and lists are produced. The order of the parameters is maintained, and the parameter values change in that order: the last parameter "changes fastest."
+
+## Sequences
+
+Sequences are specified via
+```yaml
+- !sequence
+	parameter: [param-name]
+	from: [starting-value]
+	to: [ending-value]
+	by: [spacing]
+```
+and produce evenly spaced sequences from a starting value specified by `from` to an ending value specified by `to`, spaced evenly at a distance specified with `by`. If `from` is an integer multiple of `by` away from `to` (who's on first), it will be included. If not, it will be omitted. All values are parsed as strings, manipulated via decimal arithmetic, and outputted as strings to ensure that sequences are generated with exactly the precision specified.
+
+For example,
+```yaml
+- !sequence
+	parameter: alpha
+	from: 0.1
+	to: 0.3
+	by: 0.2
+```
+will produce a sequence of values `(0.1, 0.2, 0.3)`. 
+
+## Lists
+
+Lists are specified via
+```yaml
+- !list
+	- value1
+	- value2
+	- value3
+	- ...
+```
+and produce the list exactly as specified. Values are parsed and outputted as strings.
+
 
 ## Running a parameter sweep locally
 
@@ -97,7 +145,7 @@ If you have a bunch of relatively quick jobs that you don't want to go through t
 submit-command: simulate_the_universe.sh
 ```
 
-Furthermore, you can run multiple jobs in parallel by specifying the `thread-count` parameter in the configuration file. For example, if you have an 8-core machine, you can have 8 of your local jobs run at a time via:
+Furthermore, you can run multiple jobs in parallel by specifying the `thread-count` parameter in the configuration file. For example, if you have an 8-core machine, you can have 8 of your local jobs run at full speed at a time via:
 ```
 thread-count: 8
 ```
