@@ -263,7 +263,7 @@ If you want to submit a parameter sweep to a cluster, the easiest way to do it i
 
 For example, if you use the PBS system, and have a job script file `run.pbs` in the same directory as your runm configuration file, you'd set `submit-command` to this:
 ```yaml
-submit-command: "qsub -N ${RUNM_RUN_NAME} -d ${RUNM_RUN_DIR} ${RUNM_CONFIGDIR}/run.pbs"
+submit-command: "qsub -N ${RUNM_RUN_NAME} -d ${RUNM_RUN_DIR} ${RUNM_CONFIG_DIR}/run.pbs"
 ```
 This will pass the run name along to PBS as the name for the submitted job, and will ensure that the job executes in its specified directory.
 
