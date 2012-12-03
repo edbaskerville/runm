@@ -410,12 +410,12 @@ class RunmSubmit:
 	
 	def submitJob(self, jobName, runPath, pDict, runNumStr, seedStr):
 		env = OrderedDict(os.environ)
-		env['RUNM_JOBNAME'] = str(jobName)
-		env['RUNM_JOBDIR'] = str(runPath)
-		env['RUNM_CONFIGFILE'] = self.config.filename
-		env['RUNM_CONFIGDIR'] = os.path.dirname(self.config.filename)
-		env['RUNM_RUNNUM'] = str(runNumStr)
-		env['RUNM_SEED'] = str(seedStr)
+		env['RUNM_RUN_NAME'] = str(jobName)
+		env['RUNM_RUN_DIR'] = str(runPath)
+		env['RUNM_RUN_NUM'] = str(runNumStr)
+		env['RUNM_RUN_SEED'] = str(seedStr)
+		env['RUNM_CONFIG_FILE'] = self.config.filename
+		env['RUNM_CONFIG_DIR'] = os.path.dirname(self.config.filename)
 		if self.config.useEnvironmentVariables:
 			for k, v in pDict.items():
 				env[k] = v
