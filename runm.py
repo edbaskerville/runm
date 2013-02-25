@@ -98,7 +98,10 @@ def getNumberFormatFromDecimals(xList):
 		maxBefore = max(maxBefore, max(1, digitCount + xTuple.exponent))
 		maxAfter = max(maxAfter, max(0, -xTuple.exponent))
 	
-	width = maxBefore + maxAfter + 1
+	if(maxAfter == 0):
+		width = maxBefore
+	else:
+		width = maxBefore + maxAfter + 1
 	
 	if maxAfter == 0:
 		return '{0:' + '0{0}f'.format(width) + '}'
@@ -112,6 +115,22 @@ def makeDirectory(path):
 		print 'Error creating directory\n  {0}\nAborting.'.format(path)
 		print e
 		sys.exit(1)
+
+def makeHierarchicalDict(d):
+	hd = OrderedDict()
+	
+	for k, v in d.items():
+		subks = k.split('.')
+		subd = hd
+		for i, subk in enumerate(subks):
+			if i == len(subks) - 1:
+				subd[subk] = v
+			else:
+				if not subk in subd:
+					subd[subk] = OrderedDict()
+				subd = subd[subk]
+	
+	return hd
 
 class Config(yaml.YAMLObject):
 	yaml_tag = u'!runm'
@@ -378,8 +397,10 @@ class RunmSubmit:
 		runPDict.update(pDict)
 		
 		if self.config.parametersFormat == 'json':
+			runPDictHierarchical = makeHierarchicalDict(runPDict)
+			
 			jsonFile = open(paramFilename, 'w')
-			json.dump(runPDict, jsonFile, indent=2)
+			json.dump(runPDictHierarchical, jsonFile, indent=2)
 			jsonFile.write('\n')
 			jsonFile.close()
 		elif self.config.parametersFormat == 'csv':
@@ -410,7 +431,7 @@ class RunmSubmit:
 	
 	def submitJob(self, jobName, runPath, pDict, runNumStr, seedStr):
 		env = OrderedDict(os.environ)
-		env['RUNM_RUN_NAME'] = str(jobName)
+		env['RUNM_RUN_NAME'] = '{0}-{1}'.format(self.config.name, str(jobName))
 		env['RUNM_RUN_DIR'] = str(runPath)
 		env['RUNM_RUN_NUM'] = str(runNumStr)
 		env['RUNM_RUN_SEED'] = str(seedStr)
