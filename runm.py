@@ -80,13 +80,33 @@ def stringConstructor(loader, node):
 	print node.value
 	return node.value
 
-def readConfigFile(filename):
+def loadConfigFile(filename, args):
 	linesOut = StringIO()
 	linesOut.write('!runm\n')
 	for line in open(filename):
 		linesOut.write(line.expandtabs(1))
 	linesOut.seek(0)
-	return linesOut
+	
+	yaml.add_constructor(u'!!str', stringConstructor)
+	
+	# Hack to make sure YAML treats ALL scalars as strings so
+	# so we can do decimal math
+	yaml.resolver.Resolver.yaml_implicit_resolvers = {}
+	
+	# Resolve paths
+	def pathConstructor(loader, node):
+		path = makePathRelativeTo(node.value, filename)
+		return path
+	yaml.add_constructor(u'!path', pathConstructor)
+	
+	config = yaml.load(linesOut)
+	config.filename = os.path.abspath(filename)
+	
+	for arg in args:
+		if arg == '--dry':
+			config.dry = True
+
+	return config
 
 def getNumberFormatFromDecimals(xList):
 	maxBefore = 1
@@ -107,14 +127,6 @@ def getNumberFormatFromDecimals(xList):
 		return '{0:' + '0{0}f'.format(width) + '}'
 	else:
 		return '{0:' + '0{0}.{1}f'.format(width, maxAfter) + '}'
-
-def makeDirectory(path):
-	try:
-		os.makedirs(path)
-	except os.error as e:
-		print 'Error creating directory\n  {0}\nAborting.'.format(path)
-		print e
-		sys.exit(1)
 
 def makeHierarchicalDict(d):
 	hd = OrderedDict()
@@ -164,6 +176,13 @@ class Config(yaml.YAMLObject):
 			return '.' 
 	resultsDirectory = property(getResultsDirectory)
 	
+	def getMakeRunDirectory(self):
+		try:
+			return isTrue(getattr(self, 'make-run-directory'))
+		except:
+			return True
+	makeRunDirectory = property(getMakeRunDirectory)
+
 	def getMakeSubdirectory(self):
 		try:
 			return isTrue(getattr(self, 'make-subdirectory'))
@@ -171,6 +190,13 @@ class Config(yaml.YAMLObject):
 			return True
 	makeSubdirectory = property(getMakeSubdirectory)
 	
+	def getUseExistingDirectories(self):
+		try:
+			return isTrue(getattr(self, 'use-existing-directories'))
+		except:
+			return False
+	useExistingDirectories = property(getUseExistingDirectories)
+
 	def getCommandLineArgumentPrefix(self):
 		try:
 			return getattr(self, 'command-line-argument-prefix')
@@ -237,7 +263,8 @@ class Config(yaml.YAMLObject):
 		pathComponents.append(self.resultsDirectory)
 		if self.makeSubdirectory:
 			pathComponents.append(self.name)
-		pathComponents.append(datetime.now().strftime('%Y.%m.%d-%H.%M.%S'))
+		if self.makeRunDirectory:
+			pathComponents.append(datetime.now().strftime('%Y.%m.%d-%H.%M.%S'))
 		
 		return makePathRelativeTo(os.path.join(*pathComponents), self.filename)
 
@@ -362,7 +389,23 @@ class RunmSubmit:
 		self.pool.close()
 		self.pool.join()
 		print("Submission complete.")
-	
+
+	def rerun(self, runPath):
+		env = OrderedDict(os.environ)
+		env['RUNM_RUN_NAME'] = '{0}-{1}'.format(self.config.name, 'rerun')
+		env['RUNM_RUN_DIR'] = str(runPath)
+
+		env['RUNM_CONFIG_FILE'] = self.config.filename
+		env['RUNM_CONFIG_DIR'] = os.path.dirname(self.config.filename)
+		
+		print 'Submitting job {0}...'.format(self.config.name)
+		
+		errorFilename = os.path.join(runPath, 'runm_submit_returncode')
+		stdoutFilename = os.path.join(runPath, 'runm_submit_stdout')
+		stderrFilename = os.path.join(runPath, 'runm_submit_stderr')
+		
+		runSubmitCommandAsync(self.config.submitCommand, runPath, env, errorFilename, stdoutFilename, stderrFilename)
+
 	def runJobsForParams(self, pDict, baseJobName, rootDir):
 		basePath = os.path.join(rootDir, baseJobName)
 		for i in range(int(self.config.runs)):
@@ -376,7 +419,13 @@ class RunmSubmit:
 				jobName = '{0}-{1}'.format(baseJobName, runNumStr)
 			
 			# Generate output directory for job
-			makeDirectory(runPath)
+			try:
+				os.makedirs(runPath)
+			except os.error as e:
+				if not self.config.useExistingDirectories:
+					print 'Error creating directory\n  {0}\nAborting.'.format(runPath)
+					print e
+					sys.exit(1)
 			
 			# Get random seed with however many bits were requested
 			seedStr = self.generateSeed()
@@ -427,22 +476,25 @@ class RunmSubmit:
 				v
 			)))
 		return ' '.join(argList)
-				
-	
+
 	def submitJob(self, jobName, runPath, pDict, runNumStr, seedStr):
 		env = OrderedDict(os.environ)
 		env['RUNM_RUN_NAME'] = '{0}-{1}'.format(self.config.name, str(jobName))
 		env['RUNM_RUN_DIR'] = str(runPath)
-		env['RUNM_RUN_NUM'] = str(runNumStr)
-		env['RUNM_RUN_SEED'] = str(seedStr)
+
+		if runNumStr is not None:
+			env['RUNM_RUN_NUM'] = str(runNumStr)
+		if seedStr is not None:
+			env['RUNM_RUN_SEED'] = str(seedStr)
 		env['RUNM_CONFIG_FILE'] = self.config.filename
 		env['RUNM_CONFIG_DIR'] = os.path.dirname(self.config.filename)
 		if self.config.useEnvironmentVariables:
 			for k, v in pDict.items():
 				env[k] = v
 		
-		env['RUNM_CONSTANT_ARGS'] = self.makeCommandLineArguments(self.config.constants)
-		env['RUNM_SWEEP_ARGS'] = self.makeCommandLineArguments(pDict)
+		if pDict is not None:
+			env['RUNM_CONSTANT_ARGS'] = self.makeCommandLineArguments(self.config.constants)
+			env['RUNM_SWEEP_ARGS'] = self.makeCommandLineArguments(pDict)
 		
 		print 'Submitting job {0}...'.format(jobName)
 		
@@ -460,30 +512,12 @@ class RunmSubmit:
 		return str(random.SystemRandom().getrandbits(int(self.config.randomSeedBits)))
 
 def runmSubmit(argv):
-	filename = argv[0]
-	yamlFile = readConfigFile(filename)
-	
-	yaml.add_constructor(u'!!str', stringConstructor)
-	
-	# Hack to make sure YAML treats ALL scalars as strings so
-	# so we can do decimal math
-	yaml.resolver.Resolver.yaml_implicit_resolvers = {}
-	
-	# Resolve paths
-	def pathConstructor(loader, node):
-		path = makePathRelativeTo(node.value, filename)
-		return path
-		
-	yaml.add_constructor(u'!path', pathConstructor)
-	
-	config = yaml.load(yamlFile)
-	config.filename = os.path.abspath(filename)
-	
-	for arg in argv[1:]:
-		if arg == '--dry':
-			config.dry = True
-	
+	config = loadConfigFile(argv[0], argv[1:])
 	RunmSubmit(config).run()
+
+def runmResubmit(argv):
+	config = loadConfigFile(argv[0], argv[2:])
+	RunmSubmit(config).rerun(argv[1])
 
 def runmJobStart(argv):
 	writeJson({'status' : 'RUNNING'}, 'runm_status.json')
@@ -567,6 +601,7 @@ def runmStatus(argv):
 def printUsage():
 	print('Usage:')
 	print('  {0} submit <config-file>').format(sys.argv[0])
+	print('  {0} resubmit <config-file> <run-dir>').format(sys.argv[0])
 	print('  {0} status <dir>').format(sys.argv[0])
 
 if __name__ == '__main__':
@@ -578,6 +613,8 @@ if __name__ == '__main__':
 	
 	if command == 'submit':
 		runmSubmit(sys.argv[2:])
+	elif command == 'resubmit':
+		runmResubmit(sys.argv[2:])
 	elif command == 'status':
 		runmStatus(sys.argv[2:])
 	elif command == 'job':
@@ -591,5 +628,7 @@ if __name__ == '__main__':
 			runmJobEnd(sys.argv[3:])
 		elif subCommand == 'error':
 			runmJobError(sys.argv[3:])
+	elif command == 'continue':
+		runmContinue(sys.argv[2:])
 	else:
 		printUsage()
