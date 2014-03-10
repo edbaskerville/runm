@@ -29,9 +29,12 @@ def writeJson(obj, filename):
 	os.rename(tmpFilename, filename)
 
 def readJson(filename):
-	jsonFile = open(filename)
-	obj = json.load(jsonFile, object_pairs_hook=OrderedDict)
-	jsonFile.close()
+	lines = list()
+	with open(filename) as jsonFile:
+		for line in jsonFile:
+			lines.append(line.rstrip('\n').split('//')[0])
+	jsonStr = '\n'.join(lines)
+	obj = json.loads(jsonStr, object_pairs_hook=OrderedDict)
 	return obj
 
 def runShellCommand(command, path, env):
@@ -161,6 +164,26 @@ class Config(yaml.YAMLObject):
 	threadCount = property(getThreadCount)
 	
 	constants = {}
+	
+	def getConstantsFilename(self):
+		try:
+			return getattr(self, 'constants-filename')
+		except:
+			return None
+	constantsFilename = property(getConstantsFilename)
+	
+	_allConstants = None
+	
+	def getAllConstants(self):
+		if self._allConstants is None:
+			self._allConstants = OrderedDict()
+			self._allConstants.update(self.constants)
+			if self.constantsFilename is not None:
+				constantsFromFile = readJson(self.constantsFilename)
+				self._allConstants.update(constantsFromFile)
+		return self._allConstants
+	allConstants = property(getAllConstants)
+		
 	
 	def getSubmitCommand(self):
 		try:
@@ -440,7 +463,7 @@ class RunmSubmit:
 		paramFilename = os.path.join(runPath, self.config.parametersFilename)
 		
 		runPDict = OrderedDict()
-		runPDict.update(self.config.constants)
+		runPDict.update(self.config.allConstants)
 		runPDict[self.config.runNumberParameterName] = runNumStr
 		runPDict[self.config.randomSeedParameterName] = seedStr
 		runPDict.update(pDict)
