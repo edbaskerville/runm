@@ -5,7 +5,6 @@ import sys
 from multiprocessing.pool import Pool
 from Queue import Queue
 import subprocess
-import yaml
 import json
 import csv
 from collections import OrderedDict
@@ -14,28 +13,65 @@ from datetime import datetime
 from decimal import Decimal
 import random
 
+def jsonObjectPairsHook(pairs):
+	dct = OrderedDict(pairs)
+	if 'type' in dct:
+		if dct['type'] == 'config':
+			return Config(json_dict=dct)
+		elif dct['type'] == 'sequence':
+			return Sequence(json_dict=dct)
+		elif dct['type'] == 'list':
+			return List(json_dict=dct)
+		elif dct['type'] == 'parallel':
+			return Parallel(json_dict=dct)
+		elif dct['type'] == 'combination':
+			return Combination(json_dict=dct)
+	return dct
+
+class CustomEncoder(json.JSONEncoder):
+	def default(self, obj):
+		if isinstance(obj, Decimal):
+			return str(obj)
+		return json.JSONEncoder.default(self, obj)
+
+def assignAttributes(obj, dct):
+	for k, v in dct.iteritems():
+		setattr(obj, k, v)
+
 def makePathRelativeTo(path, basePath):
 	path = os.path.expanduser(path)
 	if not os.path.isabs(path):
 		path = os.path.abspath(os.path.join(os.path.dirname(basePath), path))
 	return path
-		
-def writeJson(obj, filename):
+
+def dumpJson(obj, filename):
 	tmpFilename = filename + '~'
-	jsonFile = open(tmpFilename, 'w')
-	json.dump(obj, jsonFile, indent=2)
-	jsonFile.write('\n')
-	jsonFile.close()
+	with open(tmpFilename, 'w') as jsonFile:
+		json.dump(obj, jsonFile, cls=CustomEncoder, indent=2)
+		jsonFile.write('\n')
 	os.rename(tmpFilename, filename)
 
-def readJson(filename):
+def loadUncommentedJsonString(filename):
 	lines = list()
 	with open(filename) as jsonFile:
 		for line in jsonFile:
 			lines.append(line.rstrip('\n').split('//')[0])
-	jsonStr = '\n'.join(lines)
-	obj = json.loads(jsonStr, object_pairs_hook=OrderedDict)
-	return obj
+	return '\n'.join(lines)
+
+def loadJson(filename):
+	return json.loads(loadUncommentedJsonString(filename), object_pairs_hook=OrderedDict)
+
+def loadConfigFile(filename, args):
+	jsonStr = loadUncommentedJsonString(filename)
+	
+	config = json.loads(jsonStr, object_pairs_hook=jsonObjectPairsHook, parse_float=Decimal)
+	config.filename = os.path.abspath(filename)
+	
+	for arg in args:
+		if arg == '--dry':
+			config.dry = True
+
+	return config
 
 def runShellCommand(command, path, env):
 	process = subprocess.Popen(
@@ -51,7 +87,7 @@ def runShellCommand(command, path, env):
 	return (error, stdoutData, stderrData)
 
 def runSubmitCommandAsync(submitCommand, runPath, env, errorFilename, stdoutFilename, stderrFilename):
-	writeJson({'status' : 'SUBMITTED'}, os.path.join(runPath, 'runm_status.json'))
+	dumpJson({'status' : 'SUBMITTED'}, os.path.join(runPath, 'runm_status.json'))
 	
 	error, stdoutData, stderrData = runShellCommand(submitCommand, runPath, env)
 	
@@ -82,34 +118,6 @@ def isFalse(val):
 def stringConstructor(loader, node):
 	print node.value
 	return node.value
-
-def loadConfigFile(filename, args):
-	linesOut = StringIO()
-	linesOut.write('!runm\n')
-	for line in open(filename):
-		linesOut.write(line.expandtabs(1))
-	linesOut.seek(0)
-	
-	yaml.add_constructor(u'!!str', stringConstructor)
-	
-	# Hack to make sure YAML treats ALL scalars as strings so
-	# so we can do decimal math
-	yaml.resolver.Resolver.yaml_implicit_resolvers = {}
-	
-	# Resolve paths
-	def pathConstructor(loader, node):
-		path = makePathRelativeTo(node.value, filename)
-		return path
-	yaml.add_constructor(u'!path', pathConstructor)
-	
-	config = yaml.load(linesOut)
-	config.filename = os.path.abspath(filename)
-	
-	for arg in args:
-		if arg == '--dry':
-			config.dry = True
-
-	return config
 
 def getNumberFormatFromDecimals(xList):
 	maxBefore = 1
@@ -147,137 +155,54 @@ def makeHierarchicalDict(d):
 	
 	return hd
 
-class Config(yaml.YAMLObject):
-	yaml_tag = u'!runm'
+class Config(object):
+	def __init__(self, json_dict=None):
+		if json_dict is not None:
+			assignAttributes(self, json_dict)
 	
-	# Parameters whose names are usable as field names are just fields
+	# Default values
 	name = 'runm'
 	runs = 1
 	dry = False
 	filename = ''
-	
-	def getThreadCount(self):
-		try:
-			return getattr(self, 'thread-count')
-		except:
-			return 1
-	threadCount = property(getThreadCount)
-	
+	threadCount = 1
 	constants = {}
-	
-	def getConstantsFilename(self):
-		try:
-			return getattr(self, 'constants-filename')
-		except:
-			return None
-	constantsFilename = property(getConstantsFilename)
+	constantsFilename = None
 	
 	_allConstants = None
-	
 	def getAllConstants(self):
 		if self._allConstants is None:
 			self._allConstants = OrderedDict()
 			self._allConstants.update(self.constants)
 			if self.constantsFilename is not None:
-				constantsFromFile = readJson(self.constantsFilename)
+				constantsFromFile = loadJson(self.constantsFilename)
 				self._allConstants.update(constantsFromFile)
 		return self._allConstants
 	allConstants = property(getAllConstants)
-		
 	
-	def getSubmitCommand(self):
-		try:
-			return getattr(self, 'submit-command')
-		except:
-			return None
-	submitCommand = property(getSubmitCommand)
-	
-	def getResultsDirectory(self):
-		try:
-			return getattr(self, 'results-directory')
-		except:
-			return '.' 
-	resultsDirectory = property(getResultsDirectory)
-	
-	def getMakeRunDirectory(self):
-		try:
-			return isTrue(getattr(self, 'make-run-directory'))
-		except:
-			return True
-	makeRunDirectory = property(getMakeRunDirectory)
-
-	def getMakeSubdirectory(self):
-		try:
-			return isTrue(getattr(self, 'make-subdirectory'))
-		except:
-			return True
-	makeSubdirectory = property(getMakeSubdirectory)
-	
-	def getUseExistingDirectories(self):
-		try:
-			return isTrue(getattr(self, 'use-existing-directories'))
-		except:
-			return False
-	useExistingDirectories = property(getUseExistingDirectories)
-
-	def getCommandLineArgumentPrefix(self):
-		try:
-			return getattr(self, 'command-line-argument-prefix')
-		except:
-			return ''
-	commandLineArgumentPrefix = property(getCommandLineArgumentPrefix)
-	
-	def getCommandLineArgumentDelimiter(self):
-		try:
-			return getattr(self, 'command-line-argument-delimiter')
-		except:
-			return '='
-	commandLineArgumentDelimiter = property(getCommandLineArgumentDelimiter)
-	
-	def getUseEnvironmentVariables(self):
-		try:
-			return isTrue(getattr(self, 'use-environment-variables'))
-		except:
-			return False
-	useEnvironmentVariables = property(getUseEnvironmentVariables)
-	
-	def getParametersFilename(self):
-		try:
-			return getattr(self, 'parameters-filename')
-		except:
-			return 'parameters.csv'
-	parametersFilename = property(getParametersFilename)
+	submitCommand = None
+	resultsDirectory = '.'
+	makeRunDirectory = True
+	makeSubdirectory = True
+	useExistingDirectories = False
+	commandLineArgumentPrefix = ''
+	commandLineArgumentDelimiter = '='
+	useEnvironmentVariables = False
+	parametersFilename = 'parameters.json'
 	
 	def getParametersFormat(self):
 		try:
-			return getattr(self, 'parameters-format')
+			return self.parametersFormat
 		except:
 			return os.path.splitext(self.parametersFilename)[1][1:]
 	parametersFormat = property(getParametersFormat)
 	
-	def getRandomSeedParameterName(self):
-		try:
-			return getattr(self, 'random-seed-parameter-name')
-		except:
-			return 'seed'
-	randomSeedParameterName = property(getRandomSeedParameterName)
-	
-	def getRandomSeedBits(self):
-		try:
-			return getattr(self, 'random-seed-bits')
-		except:
-			return 16
-	randomSeedBits = property(getRandomSeedBits)
-	
-	def getRunNumberParameterName(self):
-		try:
-			return getattr(self, 'run-number-parameter-name')
-		except:
-			return 'run'
-	runNumberParameterName = property(getRunNumberParameterName)
+	randomSeedParameterName = 'randomSeed'
+	randomSeedBits = 16
+	runNumberParameterName = 'run'
 	
 	def parameterDicts(self):
-		topCombinationSweep = Combination(self.sweeps)
+		topCombinationSweep = Combination(sweeps=self.sweeps)
 		for combination in topCombinationSweep.parameterDicts():
 			yield combination
 	
@@ -292,8 +217,10 @@ class Config(yaml.YAMLObject):
 		return makePathRelativeTo(os.path.join(*pathComponents), self.filename)
 
 
-class Sequence(yaml.YAMLObject):
-	yaml_tag = u'!sequence'
+class Sequence(object):
+	def __init__(self, json_dict=None):
+		if json_dict is not None:
+			assignAttributes(self, json_dict)
 	
 	def getStart(self):
 		try:
@@ -321,15 +248,19 @@ class Sequence(yaml.YAMLObject):
 			yield { self.parameter : formatStr.format(value) }
 			value = value + byDec
 
-class List(yaml.YAMLObject):
-	yaml_tag = u'!list'
+class List(object):
+	def __init__(self, json_dict=None):
+		if json_dict is not None:
+			assignAttributes(self, json_dict)
 	
 	def parameterDicts(self):
 		for value in self.values:
 			yield { self.parameter : value }
 
-class Parallel(yaml.YAMLObject):
-	yaml_tag = u'!parallel'
+class Parallel(object):
+	def __init__(self, json_dict=None):
+		if json_dict is not None:
+			assignAttributes(self, json_dict)
 	
 	def parameterDicts(self):
 		# One iterator for each sweep
@@ -349,11 +280,12 @@ class Parallel(yaml.YAMLObject):
 				break
 			yield combination.copy()
 
-class Combination(yaml.YAMLObject):
-	yaml_tag = u'!combination'
-	
-	def __init__(self, sweeps):
-		self.sweeps = sweeps
+class Combination(object):
+	def __init__(self, sweeps=None, json_dict=None):
+		if sweeps is not None:
+			self.sweeps = sweeps
+		elif json_dict is not None:
+			assignAttributes(self, json_dict)
 	
 	def parameterDicts(self):
 		# One iterator for each sweep
@@ -379,7 +311,7 @@ class Combination(yaml.YAMLObject):
 class RunmSubmit:
 	def __init__(self, config):
 		self.config = config
-		self.runNumFormat = '{0:0' + '{0}d'.format(len(self.config.runs)) + '}'
+		self.runNumFormat = '{0:0' + '{0}d'.format(len(str(self.config.runs))) + '}'
 		self.pool = Pool(int(self.config.threadCount))
 	
 	def run(self):
@@ -471,10 +403,7 @@ class RunmSubmit:
 		if self.config.parametersFormat == 'json':
 			runPDictHierarchical = makeHierarchicalDict(runPDict)
 			
-			jsonFile = open(paramFilename, 'w')
-			json.dump(runPDictHierarchical, jsonFile, indent=2)
-			jsonFile.write('\n')
-			jsonFile.close()
+			dumpJson(runPDictHierarchical, paramFilename)
 		elif self.config.parametersFormat == 'csv':
 			csvFile = open(paramFilename, 'w')
 			csvWriter = csv.writer(csvFile)
@@ -543,17 +472,17 @@ def runmResubmit(argv):
 	RunmSubmit(config).rerun(argv[1])
 
 def runmJobStart(argv):
-	writeJson({'status' : 'RUNNING'}, 'runm_status.json')
+	dumpJson({'status' : 'RUNNING'}, 'runm_status.json')
 	
 def runmJobEnd(argv):
-	writeJson({'status' : 'DONE'}, 'runm_status.json')
+	dumpJson({'status' : 'DONE'}, 'runm_status.json')
 
 def runmJobError(argv):
 	resultDict = OrderedDict()
 	resultDict['status'] = 'ERROR'
 	if len(argv) > 0:
 		resultDict['message'] = argv[0]
-	writeJson(resultDict, 'runm_status.json')
+	dumpJson(resultDict, 'runm_status.json')
 
 def runmStatus(argv):
 	if len(argv) > 0:
@@ -574,7 +503,7 @@ def runmStatus(argv):
 			print dirpath
 			try:
 				count += 1
-				statusDict = readJson(statusPath)
+				statusDict = loadJson(statusPath)
 				status = statusDict['status']
 				if status == 'SUBMITTED':
 					submittedCount += 1
