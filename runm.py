@@ -184,11 +184,15 @@ class Config(object):
 	resultsDirectory = '.'
 	makeRunDirectory = True
 	makeSubdirectory = True
+	useExistingRootDirectory = False
+	existingRootDirectory = ''
 	useExistingDirectories = False
 	commandLineArgumentPrefix = ''
 	commandLineArgumentDelimiter = '='
 	useEnvironmentVariables = False
 	parametersFilename = 'parameters.json'
+	
+	sweeps = []
 	
 	def getParametersFormat(self):
 		try:
@@ -202,11 +206,17 @@ class Config(object):
 	runNumberParameterName = 'run'
 	
 	def parameterDicts(self):
-		topCombinationSweep = Combination(sweeps=self.sweeps)
-		for combination in topCombinationSweep.parameterDicts():
-			yield combination
+		if len(self.sweeps) == 0:
+			yield OrderedDict()
+		else:
+			topCombinationSweep = Combination(sweeps=self.sweeps)
+			for combination in topCombinationSweep.parameterDicts():
+				yield combination
 	
 	def generateRootDirectory(self):
+		if self.useExistingRootDirectory:
+			return makePathRelativeTo(self.existingRootDirectory, self.filename)
+		
 		pathComponents = []
 		pathComponents.append(self.resultsDirectory)
 		if self.makeSubdirectory:
@@ -323,7 +333,10 @@ class RunmSubmit:
 		
 		# Create directory and submit job for each parameter combination X run 
 		for pDict in self.config.parameterDicts():
-			baseJobName = '-'.join(['{0}={1}'.format(param, value) for param, value in pDict.items()])
+			if len(pDict) == 0:
+				baseJobName = None
+			else:
+				baseJobName = '-'.join(['{0}={1}'.format(param, value) for param, value in pDict.items()])
 			self.runJobsForParams(pDict, baseJobName, rootDir)
 		
 		print('---\nWaiting for submission to complete...---')
@@ -331,7 +344,10 @@ class RunmSubmit:
 			jobName, result = self.results.get()
 			
 			returnCode, stdoutData, stderrData = result.get()
-			print 'Completed submission {0}'.format(jobName)
+			if jobName is None:
+				print 'Completed submission'
+			else:
+				print 'Completed submission {0}'.format(jobName)
 			
 			if returnCode != 0:
 				print 'ERROR: submission returned nonzero code {0}'.format(returnCode)
@@ -362,7 +378,10 @@ class RunmSubmit:
 		runSubmitCommandAsync(self.config.submitCommand, runPath, env, errorFilename, stdoutFilename, stderrFilename)
 
 	def runJobsForParams(self, pDict, baseJobName, rootDir):
-		basePath = os.path.join(rootDir, baseJobName)
+		if baseJobName is None:
+			basePath = rootDir
+		else:
+			basePath = os.path.join(rootDir, baseJobName)
 		for i in range(int(self.config.runs)):
 			runNumStr = self.runNumFormat.format(i+1)
 			
@@ -371,7 +390,10 @@ class RunmSubmit:
 				jobName = baseJobName
 			else:
 				runPath = os.path.join(basePath, runNumStr)
-				jobName = '{0}-{1}'.format(baseJobName, runNumStr)
+				if baseJobName is None:
+					jobName = runNumStr
+				else:
+					jobName = '{0}-{1}'.format(baseJobName, runNumStr)
 			
 			# Generate output directory for job
 			try:
@@ -431,7 +453,10 @@ class RunmSubmit:
 
 	def submitJob(self, jobName, runPath, pDict, runNumStr, seedStr):
 		env = OrderedDict(os.environ)
-		env['RUNM_RUN_NAME'] = '{0}-{1}'.format(self.config.name, str(jobName))
+		if jobName is None:
+			env['RUNM_RUN_NAME'] = self.config.name
+		else:
+			env['RUNM_RUN_NAME'] = '{0}-{1}'.format(self.config.name, str(jobName))
 		env['RUNM_RUN_DIR'] = str(runPath)
 
 		if runNumStr is not None:
@@ -444,11 +469,13 @@ class RunmSubmit:
 			for k, v in pDict.items():
 				env[k] = v
 		
-		if pDict is not None:
-			env['RUNM_CONSTANT_ARGS'] = self.makeCommandLineArguments(self.config.constants)
-			env['RUNM_SWEEP_ARGS'] = self.makeCommandLineArguments(pDict)
+		env['RUNM_CONSTANT_ARGS'] = self.makeCommandLineArguments(self.config.constants)
+		env['RUNM_SWEEP_ARGS'] = self.makeCommandLineArguments(pDict)
 		
-		print 'Submitting job {0}...'.format(jobName)
+		if jobName is None:
+			print 'Submitting job...'
+		else:
+			print 'Submitting job {0}...'.format(jobName)
 		
 		errorFilename = os.path.join(runPath, 'runm_submit_returncode')
 		stdoutFilename = os.path.join(runPath, 'runm_submit_stdout')
