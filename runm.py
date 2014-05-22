@@ -182,8 +182,8 @@ class Config(object):
 	
 	submitCommand = None
 	resultsDirectory = '.'
-	makeRunDirectory = True
-	makeSubdirectory = True
+	makeRunNameDirectory = True
+	makeTimestampDirectory = True
 	useExistingRootDirectory = False
 	existingRootDirectory = ''
 	useExistingDirectories = False
@@ -219,9 +219,9 @@ class Config(object):
 		
 		pathComponents = []
 		pathComponents.append(self.resultsDirectory)
-		if self.makeSubdirectory:
+		if self.makeRunNameDirectory:
 			pathComponents.append(self.name)
-		if self.makeRunDirectory:
+		if self.makeTimestampDirectory:
 			pathComponents.append(datetime.now().strftime('%Y.%m.%d-%H.%M.%S'))
 		
 		return makePathRelativeTo(os.path.join(*pathComponents), self.filename)
