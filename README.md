@@ -2,7 +2,7 @@ runm
 ====
 A script for running or submitting parameter sweeps for computational jobs.
 
-Ed Baskerville
+Ed Baskerville \
 5 June 2014
 
 ## Warning
