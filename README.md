@@ -326,7 +326,7 @@ in a run directory will recursively tally how many jobs are submitted, running, 
 
 See comments in example below for an explanation of all options:
 
-```{json}
+```javascript
 {
 	// jobname
 	// Job name, used as a basis for names of individual runs.
