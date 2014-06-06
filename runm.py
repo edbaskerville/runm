@@ -479,7 +479,7 @@ class RunmSubmit:
 		stdoutFilename = os.path.join(runPath, 'runm_submit_stdout')
 		stderrFilename = os.path.join(runPath, 'runm_submit_stderr')
 		
-		if isFalse(self.config.dry):
+		if not self.config.dry:
 			result = self.pool.apply_async(runSubmitCommandAsync,
 				(self.config.submitCommand, runPath, env,
 				errorFilename, stdoutFilename, stderrFilename))
