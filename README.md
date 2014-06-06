@@ -112,6 +112,7 @@ Sequences are specified via, e.g.,
 	"to" : 0.3,
 	"by" : 0.1
 }
+```
 and produce evenly spaced sequences from a starting value specified by `from` to an ending value specified by `to`, spaced evenly at a distance specified with `by`. If `from` is an integer multiple of `by` away from `to` (who's on first), it will be included. If not, it will be omitted. All values are parsed as strings, manipulated via decimal arithmetic, and outputted as strings to ensure that sequences are generated with exactly the precision specified.
 
 The example will produce a sequence of values `(0.1, 0.2, 0.3)` for parameter `delta`.
