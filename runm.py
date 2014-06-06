@@ -65,6 +65,8 @@ def loadConfigFile(filename, args):
 	jsonStr = loadUncommentedJsonString(filename)
 	
 	config = json.loads(jsonStr, object_pairs_hook=jsonObjectPairsHook, parse_float=Decimal)
+	if type(config) is OrderedDict:
+		config = Config(json_dict=config)
 	config.filename = os.path.abspath(filename)
 	
 	for arg in args:
@@ -108,12 +110,6 @@ def runSubmitCommandAsync(submitCommand, runPath, env, errorFilename, stdoutFile
 		stderrFile.close()
 	
 	return (error, stdoutData, stderrData)
-
-def isTrue(val):
-	return val in (True, 'Yes', 'YES', 'yes', 'True', 'TRUE', 'true')
-
-def isFalse(val):
-	return val in (False, 'No', 'NO', 'no', 'False', 'FALSE', 'false')
 
 def stringConstructor(loader, node):
 	print node.value
@@ -185,8 +181,7 @@ class Config(object):
 	makeRunNameDirectory = True
 	makeTimestampDirectory = True
 	useExistingRootDirectory = False
-	existingRootDirectory = ''
-	useExistingDirectories = False
+	existingRootDirectory = None
 	commandLineArgumentPrefix = ''
 	commandLineArgumentDelimiter = '='
 	useEnvironmentVariables = False
@@ -214,7 +209,7 @@ class Config(object):
 				yield combination
 	
 	def generateRootDirectory(self):
-		if self.useExistingRootDirectory:
+		if self.useExistingRootDirectory and self.existingRootDirectory is not None:
 			return makePathRelativeTo(self.existingRootDirectory, self.filename)
 		
 		pathComponents = []
@@ -257,6 +252,12 @@ class Sequence(object):
 		while value <= endDec:
 			yield { self.parameter : formatStr.format(value) }
 			value = value + byDec
+
+class Constant(object):
+	def __init__(self, json_dict=None):
+		if json_dict is not None:
+			assignAttributes(self, json_dict)
+		
 
 class List(object):
 	def __init__(self, json_dict=None):
@@ -398,11 +399,8 @@ class RunmSubmit:
 			# Generate output directory for job
 			try:
 				os.makedirs(runPath)
-			except os.error as e:
-				if not self.config.useExistingDirectories:
-					print 'Error creating directory\n  {0}\nAborting.'.format(runPath)
-					print e
-					sys.exit(1)
+			except:
+				pass
 			
 			# Get random seed with however many bits were requested
 			seedStr = self.generateSeed()

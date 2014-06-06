@@ -3,7 +3,11 @@ runm
 A script for running or submitting parameter sweeps for computational jobs.
 
 Ed Baskerville
-2 December 2012
+5 June 2014
+
+## Warning
+
+This code is updated rarely and sometimes hurriedly. This documentation may be incomplete.
 
 ## Pronunciation
 
@@ -17,155 +21,165 @@ The script contains no dependencies whatsoever on any grid submission system, wh
 
 ## Requirements
 
-Runm requires Python 2.7.x and PyYAML. Tested on Mac OS X and Linux with [Python 2.7.1][] and [PyYAML 3.1.0][]. Has not been tested with Python 3.x. PyYAML is installed by default in the [Enthought Python Distribution][]. Runm might work on Windows---it uses the appropriate platform-independent path tools---but has not been tested there.
-
-[Python 2.7.x]: http://python.org/download/releases/2.7.1
-[PyYAML]: http://pyyaml.org/wiki/PyYAML
-[Enthought Python Distribution]: http://www.enthought.com/products/epd.php
+Runm requires Python 2.7.x. Tested on Mac OS X and Linux with Python 2.7.x. Has not been tested with Python 3.x. Runm might work on Windows---it should use the appropriate platform-independent path tools---but has not been tested there.
 
 ## Installation
 
-To install, copy `runm.py` wherever you like on the machine you submit jobs from. I recommend somewhere in your search path with the `.py` extension removed. Then make sure it's executable using
+To install, copy `runm.py` wherever you like on the machine you submit jobs from. Then make sure it's executable using
 ```
-chmod +x /path/to/runm
+chmod +x /path/to/runm.py
 ```
 
 ## Configuration Files
 
-To set up a parameter sweep, you start by writing a configuration file. Runm uses configuration files in [YAML][] format, which is a general-purpose structured data format designed to be easy to read and write.
+To set up a parameter sweep, you start by writing a configuration file. Runm uses configuration files in [JSON][] format. Single-line comments are allowed, starting with `//`.
 
-[YAML]: http://en.wikipedia.org/wiki/YAML#Sample_document
+[JSON]: http://json.org
 
 A nearly useful configuration file looks like this:
 
-```yaml
-name: jobname
-runs: 3
-results-directory: results
-submit-command: "echo ${RUNM_CONSTANT_ARGS} ${RUNM_SWEEP_ARGS}"
-parameters-filename: parameters.csv
+```json
+{
+	"name" : "jobname",
+	"runs" : 3,
+	"resultsDirectory" : results,
+	"submitCommand" : "echo ${RUNM_CONSTANT_ARGS} ${RUNM_SWEEP_ARGS}",
+	"parametersFilename" : "parameters.csv",
+	
+	"constants" : {
+		"alpha" : 1
+		"beta": 2
+	},
+	
+	"sweeps" : [
+		{
+			"type" : "sequence",
+			"parameter" : "gamma",
+			"from" : 0.0,
+			"to" : 0.2,
+			"by" : 0.1
+		},
+		{
+			"type" : "sequence",
+			"parameter": "delta",
+			"from" : 0.1,
+			"to" : 0.3,
+			"by" : 0.1
+		}
+	]
+}
 
-constants:
-	alpha: 1
-	beta: 2
-
-sweeps:
-- !sequence
-	parameter: gamma
-	from: 0.0
-	to: 0.2
-	by: 0.1
-- !sequence
-	parameter: delta
-	from: 0.1
-	to: 0.3
-	by: 0.1
 ```
 
-This specifies a parameter sweep that changes `gamma` and `delta` with `alpha` and `beta` held constant. Additionally, for every combination of parameter values, three runs will be performed, as specified by `runs`. Each run gets its own working directory, and the submission command will be run in that working directory.
+This specifies a parameter sweep that changes `gamma` and `delta` while holding `alpha` and `beta` constant. Additionally, for every combination of parameter values, three runs will be performed, as specified by `runs`. Each run gets its own working directory, and the submission command will be run in that working directory.
 
-YAML is a pretty flexible format, so there are many other ways of specifying the same structure. For example, you can use this compact notation instead for the `sweeps` section:
-```
-sweeps:
-- !sequence { parameter: gamma, from: 0.0, to: 0.2, by: 0.1 }
-- !sequence { parameter: delta, from: 0.1, to: 0.3, by: 0.1
-```
-
-More details:
-
-### Top-level configuration file options
-
-(TODO: generate all these automatically from source file?)
 
 ### Parameter sweeps
 
-Parameter sweeps are specified as a list of sub-sweeps, which are either sequences or lists of values, e.g.,
-```yaml
-sweeps:
-- !sequence
-	...
-- !sequence
-	...
-- !list
-	...
+Parameter sweeps are specified in a list of sub-sweeps, which are either sequences, lists of values, or parallel/combination meta-sweeps, e.g.,
+```json
+{
+// ...
+	"sweeps" : [
+		{
+			"type" : "sequence",
+			"parameter" : "gamma",
+			"from" : 0.0,
+			"to" : 0.2,
+			"by" : 0.1
+		},
+		{
+			"type" : "sequence",
+			"parameter": "delta",
+			"from" : 0.1,
+			"to" : 0.3,
+			"by" : 0.1
+		}
+	]
+}
 ```
-All possible combinations of values in the different sequences and lists are produced. The order of the parameters is maintained, and the parameter values change in that order: the last parameter "changes fastest."
+At the top level, all possible combinations of values in the different sequences and lists are produced. The order of the parameters is maintained, and the parameter values change in that order: the last parameter "changes fastest."
 
 ### Sequences
 
-Sequences are specified via
-```yaml
-- !sequence
-	parameter: [param-name]
-	from: [starting-value]
-	to: [ending-value]
-	by: [spacing]
-```
+Sequences are specified via, e.g.,
+```json
+{
+	"type" : "sequence",
+	"parameter" : "delta",
+	"from" : 0.1,
+	"to" : 0.3,
+	"by" : 0.1
+}
 and produce evenly spaced sequences from a starting value specified by `from` to an ending value specified by `to`, spaced evenly at a distance specified with `by`. If `from` is an integer multiple of `by` away from `to` (who's on first), it will be included. If not, it will be omitted. All values are parsed as strings, manipulated via decimal arithmetic, and outputted as strings to ensure that sequences are generated with exactly the precision specified.
 
-For example,
-```yaml
-- !sequence
-	parameter: alpha
-	from: 0.1
-	to: 0.3
-	by: 0.2
-```
-will produce a sequence of values `(0.1, 0.2, 0.3)` for parameter `alpha`. Compact notation is also supported:
-```yaml
-- !sequence { parameter: alpha, from: 0.1, to: 0.3, by: 0.2 }
-```
+The example will produce a sequence of values `(0.1, 0.2, 0.3)` for parameter `delta`.
 
 ### Lists
 
 Lists are specified via
-```yaml
-- !list
-	parameter: [param-name]
-	values:
-	- [value1]
-	- [value2]
-	- [value3]
-	- ...
+```json
+{
+	"type" : "list",
+	"parameter" : "gamma",
+	"values" : [5, 75, 89]
+}
 ```
 and produce the list exactly as specified.
 
-For example,
-```yaml
-- !list
-	parameter: favoriteColor
-	values:
-	- 5
-	- 75
-	- santaClaus
-	- ...
+### Parallel sweeps
+
+Parallel sweeps are specified via, e.g.,
+```json
+{
+	"type" : "parallel",
+	"sweeps" : [
+		{
+			"type" : "list",
+			"parameter" : "shoeColor",
+			"values" : ["red", "green", "blue"]
+		},
+		{
+			"type" : "sequence",
+			"parameter" : "temperature",
+			"from" : 75,
+			"to" : 79,
+			"by" : 2
+		}
+	]
+}
 ```
-will produce the sequence `(5, 75, santaClaus)` for parameter `favoriteColor`. Compact notation is also supported:
-```yaml
-- !list { parameter: favoriteColor, values: [5, 75, santaClaus]
+Both of the sub-sweeps consist of three values; the parallel sweep assigns the value in each sub-sweep to a parameter combination at each index, so that there will be three parameter combinations produced: `["red", 75]`, `["green", 77"], and `["blue", 79]`.
+
+### Combination sweeps
+
+Combination sweeps behave like the top-level sweep, and produce all combinations of parameters provided. E.g.,
+```json
+{
+	"type" : "combination",
+	"sweeps" : [
+		{
+			"type" : "list",
+			"parameter" : "shoeColor",
+			"values" : ["red", "green"]
+		},
+		{
+			"type" : "sequence",
+			"parameter" : "temperature",
+			"from" : 75,
+			"to" : 77,
+			"by" : 2
+		}
+	]
+}
 ```
+will produce four combinations of parameters: `["red", 75]`, `["red", 77]`, `["green", 75]`, and `["green", 77]`.
 
 ## Submitting jobs
 
-Here's the configuration file from above, in compact notation:
-
-```yaml
-name: jobname
-runs: 3
-results-directory: results
-submit-command: "echo ${RUNM_CONSTANT_ARGS} ${RUNM_SWEEP_ARGS}"
-parameters-filename: parameters.csv
-
-constants: {alpha: 1, beta: 2}
-
-sweeps:
-- !sequence { parameter: gamma, from: 0.0, to: 0.2, by: 0.1 }
-- !sequence { parameter: delta, from: 0.1, to: 0.3, by: 0.1 }
+If the filename of the configuration file is `config.json`, you can submit it using
 ```
-
-If the filename of the configuration file is `config.yaml`, you can submit it using
-```
-runm submit config.yaml
+runm.py submit config.json
 ```
 and this results in the creation of a directory hierarchy for results, and causes the command specified by `submit-command` (in this case, `echo...`) to be run for every combination of parameter values specified inside a directory corresponding to that combination of parameter values. Parameters specified by `constants` will be held the same for every run; parameters specified by `sweeps` will be produced in all possible combinations with each other.
 
@@ -247,23 +261,23 @@ Additionally, the submission command will be run with a number of environment va
 ### Running a parameter sweep locally
 
 If you have a bunch of relatively quick jobs that you don't want to go through the trouble of submitting to a cluster, you can use runm to run them locally by setting `submit-command` to a command that actually runs the job. If your command reads in the parameters from a file as described above, this might be as simple as a single script:
-```yaml
-submit-command: simulate_the_universe.sh
+```json
+"submitCommand" : "simulate_the_universe.sh"
 ```
 
-Furthermore, you can run multiple jobs in parallel by specifying the `thread-count` parameter in the configuration file. For example, if you have an 8-core machine, you can have 8 of your local jobs run at full speed at a time via:
+Furthermore, you can run multiple jobs in parallel by specifying the `threadCount` parameter in the configuration file. For example, if you have an 8-core machine, you can have 8 of your local jobs run at full speed at a time via:
 ```
-thread-count: 8
+"threadCount" : 8
 ```
 As soon as a job finishes, the next waiting job will start.
 
 ### Submitting a job to a cluster
 
-If you want to submit a parameter sweep to a cluster, the easiest way to do it is to write a job submission file in the usual format for your system, and then set the `submit-command` to the submission command for your cluster, passing along important environment variables.
+If you want to submit a parameter sweep to a cluster, the easiest way to do it is to write a job submission file in the usual format for your system, and then set the `submitCommand` to the submission command for your cluster, passing along important environment variables.
 
 For example, if you use the PBS system, and have a job script file `run.pbs` in the same directory as your runm configuration file, you'd set `submit-command` to this:
-```yaml
-submit-command: "qsub -N ${RUNM_RUN_NAME} -d ${RUNM_RUN_DIR} ${RUNM_CONFIG_DIR}/run.pbs"
+```json
+"submitCommand" : "qsub -N ${RUNM_RUN_NAME} -d ${RUNM_RUN_DIR} ${RUNM_CONFIG_DIR}/run.pbs"
 ```
 This will pass the run name along to PBS as the name for the submitted job, and will ensure that the job executes in its specified directory.
 
@@ -281,3 +295,177 @@ echo ${RUNM_CONSTANT_ARGS} ${RUNM_SWEEP_ARGS}
 ```
 
 Note that runm submits a job for every single run, so if you're sweeping three parameters with 10 values each and 10 runs per parameter combination, runm will submit 10,000 jobs to your cluster, which might not be precisely what you want.
+
+### Job monitoring
+
+Runm can also be used for very simple job monitoring, by having job scripts call `runm.py job start` when they start, and `runm.py job end` when they finish, e.g.,
+
+```sh
+#!/bin/sh
+#PBS -m a
+#PBS -M ed@example.org
+#PBS -q eeb
+#PBS -l nodes=1:ppn=8
+#PBS -l walltime=0:00:10
+#PBS -V
+
+runm.py job start
+echo ${RUNM_CONSTANT_ARGS} ${RUNM_SWEEP_ARGS}
+runm.py job end
+```
+
+Then, running
+```sh
+runm.py status
+```
+in a run directory will recursively tally how many jobs are submitted, running, and complete and report information about each job as well as a summary.
+
+### Configuration file options
+
+See comments in example below for an explanation of all options:
+
+```{json}
+{
+	// jobname
+	// Job name, used as a basis for names of individual runs.
+	// default: "runm"
+	"name" : "jobname",
+	
+	// submitCommand
+	// Command to run in each run directory, e.g. to submit the job to the cluster.
+	"submitCommand" : "qsub -N ${RUNM_RUN_NAME} -d ${RUNM_RUN_DIR} ${RUNM_CONFIG_DIR}/run.pbs"
+	
+	// parametersFilename
+	// Name of file to write parameters to in each run directory. File can be written in
+	// JSON or CSV format.
+	// default: "parameters.json"
+	"parametersFilename" : "parameters.json",
+	
+	// parametersFormat
+	// Format of file to write parameters to in each run directory.
+	// default: as specified by file extension (json or csv)
+	"parametersFormat" : "json",
+	
+	// runs
+	// Number of runs to perform with different randm seeds.
+	// default: 1
+	"runs" : 1,
+	
+	// dry
+	// If true, performs a "dry run": creates subdirectories for each run,
+	// but does not actuall perform the submission command.
+	// default: false
+	"dry" : false,
+	
+	// resultsDirectory
+	// Top-level directory to hold results, absolute or relative to location of configuration file.
+	// default: "."
+	"resultsDirectory" : "results",
+	
+	// makeRunNameDirectory
+	// Whether or not to create a sub-directory in the results directory for this job.
+	// default: true
+	"makeRunNameDirectory" : true,
+	
+	// makeTimestampDirectory
+	// Whether or not to create a sub-directory for each job submission named using the submission time.
+	// default: true
+	"makeTimestampDirectory" : true,
+	
+	// useExistingRootDirectory
+	// Whether or not to use an existing root directory from a previously run job.
+	// default: false
+	"useExistingRootDirectory" : false,
+	
+	// existingRootDirectory
+	// The path to an existing root directory from a previously run job.
+	// default: null
+	"existingRootDirectory" : "results/jobname/2014.06.06-01.08.05",
+	
+	// commandLineArgumentPrefix
+	// For jobs specifying parameters using command-line arguments, a prefix before
+	// parameter specifications.
+	// default: ""
+	"commandLineArgumentPrefix" : "",
+	
+	// commandLineArgumentDelimiter
+	// For jobs specifying parameters using command-line-arguments, a delimiter to place
+	// between parameter names and values.
+	// default: "="
+	"commandLineArgumentDelimiter" : "=",
+	
+	// randomSeedParameterName
+	// Name of parameter in which to supply seed for a random number generator.
+	// default: "randomSeed"
+	"randomSeedParameterName" : "randomSeed",
+	
+	// randomSeedBits
+	// Number of bits in generated random seed value.
+	// default: 16
+	"randomSeedBits" : "16",
+	
+	// runNumberParameterName
+	// Name of parameter in which to supply the run number (1-indexed)
+	// default: "run"
+	"runNumberParameterName" : "run",
+	
+	// threadCount
+	// Number of threads to run submission commands on. If the submission command
+	// actually performs a long-running task on the local machine, up to threadCount
+	// tasks can be performed simultaneously. That is, runm can be used to locally
+	// parallelize multiple runs.
+	// For submitting jobs to a cluster, this should be left set to 1.
+	"threadCount" : 1,
+	
+	// useEnvironmentVariables
+	// If true, sets an environment variable for each parameter.
+	// default: false
+	"useEnvironmentVariables" : false,
+	
+	// constants
+	// Dictionary of parameters to give constant default values. These values can 
+	// be overridden by parameter sweeps and by values provided in an external constants
+	// file.
+	"constants" : {
+		"alpha" : 1,
+		"beta" : 2
+	}
+	
+	// constantsFilename
+	// Filename of external JSON-formatted constants dictionary. These values will override
+	// constants in the configuration file, and will be overridden by parameter sweeps.
+	"constantsFilename" : "constant_parameters.json",
+	
+	// sweeps
+	// Array of parameter sweeps.
+	"sweeps" : [
+		{
+			"type" : "sequence",
+			"parameter" : "gamma",
+			"from" : 5,
+			"to" : 10,
+			"by" : "1"
+		},
+		{
+			"type" : "list",
+			"parameter" : "delta",
+			"values" : [0.5, 0.9, 1.1]
+		},
+		{
+			"type" : "parallel",
+			"sweeps" : [
+				{
+					"type" : "list",
+					"parameter" : "chi",
+					"values" : [1, 2, 3, 4, 5]
+				},
+				{
+					"type" : "list",
+					"parameter" : "psi",
+					"values" : [4, 9, 16, 25, 36]
+				}
+			]
+		}
+	]
+}
+```
