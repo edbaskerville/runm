@@ -39,17 +39,17 @@ To set up a parameter sweep, you start by writing a configuration file. Runm use
 
 A nearly useful configuration file looks like this:
 
-```json
+```javascript
 {
 	"name" : "jobname",
 	"runs" : 3,
-	"resultsDirectory" : results,
+	"resultsDirectory" : "results",
 	"submitCommand" : "echo ${RUNM_CONSTANT_ARGS} ${RUNM_SWEEP_ARGS}",
 	"parametersFilename" : "parameters.csv",
 	
 	"constants" : {
 		"alpha" : 1
-		"beta": 2
+		"beta" : 2
 	},
 	
 	"sweeps" : [
